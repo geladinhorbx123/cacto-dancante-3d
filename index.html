@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cacto Dançante 3D</title>
+<style>
+:root{--bg:#f4efe6;--panel:rgba(255,255,255,.88);--ink:#2b2a26;--accent:#2e9b3e;--btn:#fff;--bd:#d9d1c0;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1d1b22;--panel:rgba(35,32,44,.9);--ink:#f1ecf7;--accent:#57d36b;--btn:#2e2a3a;--bd:#4a4560}}
+:root[data-theme="dark"]{--bg:#1d1b22;--panel:rgba(35,32,44,.9);--ink:#f1ecf7;--accent:#57d36b;--btn:#2e2a3a;--bd:#4a4560}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+#c{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#ui{position:absolute;left:0;right:0;bottom:0;padding:10px 10px calc(10px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center;pointer-events:none}
+.panel{pointer-events:auto;background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--bd);border-radius:18px;padding:12px;max-width:640px;width:100%;display:flex;flex-direction:column;gap:9px}
+#status{font-size:14px;text-align:center;min-height:20px}
+.row{display:flex;flex-wrap:wrap;gap:7px;justify-content:center}
+button{font:inherit;font-size:14px;background:var(--btn);color:var(--ink);border:1px solid var(--bd);border-radius:999px;padding:8px 13px;cursor:pointer}
+button:active{transform:scale(.96)}
+button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.txt{display:flex;gap:7px}
+input[type=text]{flex:1;min-width:0;font:inherit;font-size:14px;padding:8px 12px;border-radius:999px;border:1px solid var(--bd);background:var(--btn);color:var(--ink)}
+label{font-size:13px;display:flex;gap:8px;align-items:center;justify-content:center}
+input[type=range]{width:150px;accent-color:var(--accent)}
+h1{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;margin:0;font-size:20px;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<h1>🌵 Cacto Dançante</h1>
+<div id="ui"><div class="panel">
+<div id="status">Escolha uma música ou ative o modo eco e fale com o cacto!</div>
+<div class="row" id="songs"></div>
+<div class="row">
+<button id="echo">🎤 Modo eco (repete sua voz)</button>
+<button id="stop">⏹ Parar</button>
+</div>
+<div class="txt"><input type="text" id="say" placeholder="Digite algo para o cacto falar…" maxlength="120"><button id="sayb">💬 Falar</button></div>
+<label>Voz do cacto (grave ↔ aguda)<input type="range" id="pitch" min="1" max="2" step="0.05" value="1.45"></label>
+</div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('c');
+const R=new THREE.WebGLRenderer({canvas:cv,antialias:true});
+R.setPixelRatio(Math.min(devicePixelRatio,2));
+R.shadowMap.enabled=true;
+const S=new THREE.Scene();
+const dark=matchMedia('(prefers-color-scheme: dark)').matches;
+S.background=new THREE.Color(dark?0x1d1b22:0xf4efe6);
+const cam=new THREE.PerspectiveCamera(42,1,.1,100);
+let th=0.4,ph=1.25,dist=9;
+function placeCam(){cam.position.set(dist*Math.sin(ph)*Math.sin(th),1.9+dist*Math.cos(ph),dist*Math.sin(ph)*Math.cos(th));cam.lookAt(0,1.9,0)}
+function resize(){const w=innerWidth,h=innerHeight;R.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix();dist=Math.max(dist,w/h<.8?11:8)}
+addEventListener('resize',resize);
+let drag=null;
+cv.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];cv.setPointerCapture(e.pointerId)});
+cv.addEventListener('pointermove',e=>{if(!drag)return;th-=(e.clientX-drag[0])*.008;ph=Math.min(1.5,Math.max(.6,ph-(e.clientY-drag[1])*.006));drag=[e.clientX,e.clientY]});
+cv.addEventListener('pointerup',()=>drag=null);
+cv.addEventListener('wheel',e=>{dist=Math.min(16,Math.max(5,dist+e.deltaY*.01));e.preventDefault()},{passive:false});
+
+// luzes
+S.add(new THREE.HemisphereLight(0xffffff,0xb89a70,.75));
+const sun=new THREE.DirectionalLight(0xffffff,.8);sun.position.set(4,8,5);sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);Object.assign(sun.shadow.camera,{left:-5,right:5,top:5,bottom:-5});S.add(sun);
+
+// mesa
+const table=new THREE.Mesh(new THREE.BoxGeometry(14,.4,8),new THREE.MeshStandardMaterial({color:0xb98a5a,roughness:.7}));
+table.position.y=-.2;table.receiveShadow=true;S.add(table);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(60,60),new THREE.MeshStandardMaterial({color:dark?0x2b2735:0xe2d8c4}));
+floor.rotation.x=-Math.PI/2;floor.position.y=-4;S.add(floor);
+
+// vaso
+const potM=new THREE.MeshStandardMaterial({color:0xd9822b,roughness:.95});
+const pot=new THREE.Mesh(new THREE.CylinderGeometry(.95,.72,1,40),potM);pot.position.y=.5;pot.castShadow=true;S.add(pot);
+const rimM=new THREE.MeshStandardMaterial({color:0x6b4426,roughness:1});
+const rim=new THREE.Mesh(new THREE.TorusGeometry(.95,.16,14,40),rimM);rim.rotation.x=Math.PI/2;rim.position.y=1;S.add(rim);
+const soil=new THREE.Mesh(new THREE.SphereGeometry(.85,24,12),new THREE.MeshStandardMaterial({color:0xf0cf86,roughness:1}));
+soil.scale.y=.3;soil.position.y=1.02;S.add(soil);
+
+// textura tricô
+function knit(){const k=document.createElement('canvas');k.width=k.height=128;const g=k.getContext('2d');
+g.fillStyle='#2f9a35';g.fillRect(0,0,128,128);
+for(let y=0;y<128;y+=8)for(let x=0;x<128;x+=8){g.fillStyle=(x/8+y/8)%2?'#37ab3d':'#278a2e';g.fillRect(x,y,8,8)}
+g.fillStyle='rgba(255,255,255,.85)';for(let i=0;i<70;i++){g.fillRect(Math.random()*128,Math.random()*128,2,2)}
+const t=new THREE.CanvasTexture(k);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(3,8);return t}
+const gm=new THREE.MeshStandardMaterial({map:knit(),roughness:.95,emissive:0x000000});
+
+// cacto
+const pivot=new THREE.Group();pivot.position.y=1;S.add(pivot);
+const bodyCurve=new THREE.CatmullRomCurve3([[0,-.1,0],[.12,.7,0],[-.12,1.4,0],[0,2.1,0]].map(p=>new THREE.Vector3(...p)));
+const body=new THREE.Mesh(new THREE.TubeGeometry(bodyCurve,32,.43,20),gm);body.castShadow=true;pivot.add(body);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.43,24,18),gm);head.position.set(0,2.1,0);head.castShadow=true;pivot.add(head);
+function arm(s){const g=new THREE.Group();g.position.set(.1*s,1.1,0);
+const c=new THREE.CatmullRomCurve3([[0,0,0],[.5,-.08,0],[.85,.25,0],[.9,.75,0]].map(p=>new THREE.Vector3(p[0]*s,p[1],p[2])));
+const m=new THREE.Mesh(new THREE.TubeGeometry(c,20,.2,14),gm);m.castShadow=true;g.add(m);
+const e=new THREE.Mesh(new THREE.SphereGeometry(.2,14,10),gm);e.position.set(.9*s,.75,0);g.add(e);pivot.add(g);return g}
+const armL=arm(-1),armR=arm(1);
+// rosto
+const eyeM=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.3}),pupM=new THREE.MeshStandardMaterial({color:0x111111});
+const eyes=[];[-1,1].forEach(s=>{const eg=new THREE.Group();eg.position.set(.2*s,2.27,.33);
+eg.add(new THREE.Mesh(new THREE.SphereGeometry(.17,16,12),eyeM));
+const p=new THREE.Mesh(new THREE.SphereGeometry(.075,10,8),pupM);p.position.set(0,0,.14);eg.add(p);pivot.add(eg);eyes.push(eg)});
+const mouth=new THREE.Mesh(new THREE.TorusGeometry(.17,.025,8,18,Math.PI),new THREE.MeshStandardMaterial({color:0x7a2d1b}));
+mouth.rotation.z=Math.PI;mouth.position.set(0,2.08,.41);pivot.add(mouth);
+// luzes coloridas do corpo
+const glows=[0xff3df0,0xffe53d,0x3dffb0].map((c,i)=>{const l=new THREE.PointLight(c,0,3.5);l.position.set(0,1.2+i*.45,.7);pivot.add(l);return l});
+
+// áudio
+let ctx,master,an,abuf,nodes=[],busy=false,songEnd=0,speaking=false,micOn=false,stream,mAn,mBuf,rec=null,lastV=0,recT=0;
+function initAudio(){if(ctx){ctx.resume();return}
+ctx=new(window.AudioContext||window.webkitAudioContext)();master=ctx.createGain();master.gain.value=.8;
+an=ctx.createAnalyser();an.fftSize=512;abuf=new Uint8Array(an.fftSize);master.connect(an);an.connect(ctx.destination)}
+const rms=(a,b)=>{a.getByteTimeDomainData(b);let s=0;for(let i=0;i<b.length;i++){const v=(b[i]-128)/128;s+=v*v}return Math.sqrt(s/b.length)};
+const say_=t=>$('status').textContent=t;
+
+const SONGS={
+'🎂 Parabéns':[[67,.75],[67,.25],[69,1],[67,1],[72,1],[71,2],[67,.75],[67,.25],[69,1],[67,1],[74,1],[72,2],[67,.75],[67,.25],[79,1],[76,1],[72,1],[71,1],[69,1],[77,.75],[77,.25],[76,1],[72,1],[74,1],[72,2]],
+'⭐ Brilha Brilha':[60,60,67,67,69,69,[67,2],65,65,64,64,62,62,[60,2],67,67,65,65,64,64,[62,2],67,67,65,65,64,64,[62,2],60,60,67,67,69,69,[67,2],65,65,64,64,62,62,[60,2]],
+'🎶 Ode à Alegria':[64,64,65,67,67,65,64,62,60,60,62,64,[64,1.5],[62,.5],[62,2],64,64,65,67,67,65,64,62,60,60,62,64,[62,1.5],[60,.5],[60,2]],
+'🔔 Sinos':[64,64,[64,2],64,64,[64,2],64,67,[60,1.5],[62,.5],[64,4],65,65,[65,1.5],[65,.5],65,64,64,[64,.5],[64,.5],64,62,62,64,[62,2],[67,2]]
+};
+const norm=s=>s.map(n=>Array.isArray(n)?n:[n,1]);
+function stopAll(){nodes.forEach(n=>{try{n.stop()}catch(e){}});nodes=[];busy=false;songEnd=0;speechSynthesis&&speechSynthesis.cancel();speaking=false}
+function playSong(name){initAudio();stopAll();busy=true;const beat=.4;let t=ctx.currentTime+.15;
+norm(SONGS[name]).forEach(([m,d])=>{const f=440*Math.pow(2,(m-69)/12),dur=d*beat;
+[[ 'triangle',1,.35],['sine',2,.12]].forEach(([ty,mul,v])=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type=ty;o.frequency.value=f*mul;
+g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+dur*.95);
+o.connect(g);g.connect(master);o.start(t);o.stop(t+dur);nodes.push(o)});t+=dur});
+songEnd=t;say_('♪ Cantando: '+name.replace(/^\S+\s/,''))}
+function playBuf(b){busy=true;const s=ctx.createBufferSource();s.buffer=b;s.playbackRate.value=+$('pitch').value;s.connect(master);
+s.onended=()=>{busy=false;if(micOn)say_('🎤 Estou ouvindo… fale algo!')};s.start();nodes.push(s);say_('🗣 Repetindo com minha voz!')}
+
+// modo eco
+async function toggleEcho(){
+if(micOn){micOn=false;stream&&stream.getTracks().forEach(t=>t.stop());$('echo').classList.remove('on');say_('Modo eco desligado.');return}
+initAudio();
+try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}})}
+catch(e){say_('Não consegui acessar o microfone neste ambiente. Use o campo de texto para o cacto falar!');return}
+const src=ctx.createMediaStreamSource(stream);mAn=ctx.createAnalyser();mAn.fftSize=1024;mBuf=new Uint8Array(1024);src.connect(mAn);
+micOn=true;$('echo').classList.add('on');say_('🎤 Estou ouvindo… fale algo!')}
+function startRec(now){const chunks=[];const mr=new MediaRecorder(stream);rec=mr;recT=lastV=now;
+mr.ondataavailable=e=>chunks.push(e.data);
+mr.onstop=async()=>{rec=null;if(!micOn||performance.now()-recT<450)return;
+try{const b=await ctx.decodeAudioData(await new Blob(chunks).arrayBuffer());playBuf(b)}catch(e){}};
+mr.start();say_('👂 Ouvindo você…')}
+function echoTick(now){if(!micOn||!mAn)return;
+if(busy||speaking){if(rec&&rec.state==='recording')rec.stop();return}
+const r=rms(mAn,mBuf);
+if(!rec){if(r>.04)startRec(now)}
+else{if(r>.025)lastV=now;if(now-lastV>800||now-recT>8000)rec.state==='recording'&&rec.stop()}}
+
+// texto falado
+function speak(){const t=$('say').value.trim();if(!t)return;stopAll();
+if(!('speechSynthesis' in window)){say_('Seu navegador não suporta voz sintetizada.');return}
+const u=new SpeechSynthesisUtterance(t);u.lang='pt-BR';u.pitch=2;u.rate=1.1;
+u.onstart=()=>{speaking=true;say_('🗣 '+t)};u.onend=u.onerror=()=>{speaking=false;say_('Fale mais ou escolha uma música!')};
+speechSynthesis.speak(u)}
+
+// UI
+Object.keys(SONGS).forEach(n=>{const b=document.createElement('button');b.textContent=n;b.onclick=()=>playSong(n);$('songs').appendChild(b)});
+$('echo').onclick=toggleEcho;$('stop').onclick=()=>{stopAll();say_('Parei! Escolha outra coisa.')};
+$('sayb').onclick=speak;$('say').addEventListener('keydown',e=>{if(e.key==='Enter')speak()});
+
+// animação
+let energy=0,T=0,last=performance.now();
+function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/1000);last=now;
+if(busy&&songEnd&&ctx&&ctx.currentTime>songEnd+.1){busy=false;songEnd=0;say_('Bis? Escolha outra música!')}
+echoTick(now);
+let target=0;if(ctx&&busy)target=Math.min(1,rms(an,abuf)*5+.25);if(speaking)target=.75;
+energy+=(target-energy)*Math.min(1,dt*6);T+=dt*(1+energy*1.5);
+const e=energy,idle=.04;
+pivot.rotation.z=Math.sin(T*5)*.28*e+Math.sin(T*.8)*idle;
+pivot.rotation.y=Math.sin(T*2.5)*.55*e;
+pivot.rotation.x=Math.sin(T*5+1)*.08*e;
+pivot.position.y=1+Math.abs(Math.sin(T*5))*.12*e;
+pivot.scale.y=1+Math.sin(T*10)*.03*e;
+armL.rotation.z=-.15-Math.sin(T*10)*.7*e+Math.sin(T*1.1)*.05;
+armR.rotation.z=.15+Math.sin(T*10+Math.PI)*.7*e-Math.sin(T*1.1)*.05;
+eyes.forEach((g,i)=>{g.rotation.z=Math.sin(T*6+i)*.2*e;g.scale.setScalar(1+Math.sin(T*10+i)*.08*e)});
+mouth.scale.y=1+e*.8*Math.abs(Math.sin(T*9));
+glows.forEach((l,i)=>{l.intensity=e*2.2;l.color.setHSL((T*.25+i*.33)%1,1,.55)});
+gm.emissive.setHSL((T*.25)%1,.8,.5);gm.emissiveIntensity=e*.12;
+placeCam();R.render(S,cam)}
+resize();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
