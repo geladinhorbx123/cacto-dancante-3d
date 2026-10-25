@@ -21,5 +21,5 @@ Depois acesse http://localhost:8000.
 ## Publicar no GitHub Pages
 Settings → Pages → Branch `main` / pasta `/ (root)`.
 
-Tá aqui a bosta
+Tá aqui o site guloso
 https://geladinhorbx123.github.io/cacto-dancante-3d/
